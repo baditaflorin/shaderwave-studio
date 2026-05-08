@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT="${PORT:-4173}"
+if [[ -z "${PORT:-}" ]]; then
+  PORT="$(node -e "const net=require('node:net'); const s=net.createServer(); s.listen(0,'127.0.0.1',()=>{console.log(s.address().port); s.close();});")"
+fi
 BASE_URL="http://127.0.0.1:${PORT}/shaderwave-studio/"
 
 npm run build
