@@ -1,0 +1,41 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs, temp, and coverage
+*.log
+tmp/
+coverage/
+.nyc_output/
+
+# Node
+node_modules/
+dist/
+dist-data/
+.vite/
+
+# Go
+bin/
+pkg/
+*.test
+coverage.out
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Playwright
+test-results/
+playwright-report/

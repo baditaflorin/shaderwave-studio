@@ -1,0 +1,11 @@
+node_modules
+docs/assets
+docs/ffmpeg-core
+docs/manifest.webmanifest
+docs/registerSW.js
+docs/sw.js
+docs/workbox-*.js
+docs/index.html
+docs/404.html
+public/ffmpeg-core
+package-lock.json
