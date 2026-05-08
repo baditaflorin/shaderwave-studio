@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
 if (existsSync("docs/index.html")) {
@@ -7,13 +7,25 @@ if (existsSync("docs/index.html")) {
 
 let commit = "dev";
 try {
-  commit = execSync("git rev-parse --short HEAD", {
-    stdio: ["ignore", "pipe", "ignore"],
-  })
+  commit = execFileSync(
+    "git",
+    ["log", "-1", "--format=%h", "--", ".", ":(exclude)docs/**"],
+    {
+      stdio: ["ignore", "pipe", "ignore"],
+    },
+  )
     .toString()
     .trim();
 } catch {
-  commit = "dev";
+  try {
+    commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  } catch {
+    commit = "dev";
+  }
 }
 
 const build = {

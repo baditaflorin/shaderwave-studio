@@ -1,6 +1,6 @@
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -13,13 +13,25 @@ const pkg = JSON.parse(
 
 function gitCommit() {
   try {
-    return execSync("git rev-parse --short HEAD", {
-      stdio: ["ignore", "pipe", "ignore"],
-    })
+    return execFileSync(
+      "git",
+      ["log", "-1", "--format=%h", "--", ".", ":(exclude)docs/**"],
+      {
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    )
       .toString()
       .trim();
   } catch {
-    return "dev";
+    try {
+      return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .toString()
+        .trim();
+    } catch {
+      return "dev";
+    }
   }
 }
 
