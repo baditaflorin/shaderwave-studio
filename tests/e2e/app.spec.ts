@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-test("loads the published shell and project links", async ({ page }) => {
+test("loads the studio and analyzes demo audio", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
+
   await page.goto("./");
 
   await expect(
@@ -14,5 +21,10 @@ test("loads the published shell and project links", async ({ page }) => {
     "href",
     "https://www.paypal.com/paypalme/florinbadita",
   );
-  await expect(page.getByText("GitHub Pages, browser-only")).toBeVisible();
+  await page.getByRole("button", { name: "Demo" }).click();
+  await expect(page.getByText(/shaderwave-demo\.wav/)).toBeVisible();
+  await expect(page.getByTestId("visualizer-canvas")).toBeVisible();
+  await expect(page.getByTestId("spectrogram")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Export MP4" })).toBeEnabled();
+  expect(consoleErrors).toEqual([]);
 });

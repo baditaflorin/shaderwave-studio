@@ -18,7 +18,7 @@ describe("App", () => {
       "href",
       "https://www.paypal.com/paypalme/florinbadita",
     );
-    expect(screen.getByText("0.1.0-test")).toBeInTheDocument();
+    expect(screen.getByText(/0.1.0-test/)).toBeInTheDocument();
     expect(screen.getByText("test")).toBeInTheDocument();
   });
 });
