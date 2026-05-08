@@ -8,6 +8,8 @@ Support: https://www.paypal.com/paypalme/florinbadita
 
 Drop an MP3, bind FFT bands to WebGPU shaders, preview audio-reactive visuals, and export MP4 entirely in the browser.
 
+![Shaderwave Studio demo](https://raw.githubusercontent.com/baditaflorin/shaderwave-studio/main/docs/demo.png)
+
 ## Quickstart
 
 ```bash
