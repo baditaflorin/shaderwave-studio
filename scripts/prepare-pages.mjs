@@ -14,6 +14,7 @@ const generatedPaths = [
   "manifest.webmanifest",
   "registerSW.js",
   "sw.js",
+  "sw.js.map",
   "workbox-*.js",
   "assets",
   "ffmpeg-core",

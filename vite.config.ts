@@ -68,6 +68,7 @@ export default defineConfig({
         globIgnores: ["**/ffmpeg-core/**", "build.json"],
         maximumFileSizeToCacheInBytes: 40 * 1024 * 1024,
         navigateFallback: "/shaderwave-studio/index.html",
+        sourcemap: false,
       },
     }),
   ],
@@ -85,6 +86,6 @@ export default defineConfig({
     outDir: "docs",
     emptyOutDir: false,
     assetsDir: "assets",
-    sourcemap: true,
+    sourcemap: false,
   },
 });
