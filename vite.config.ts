@@ -65,7 +65,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,wasm,json}"],
-        globIgnores: ["**/ffmpeg-core/**"],
+        globIgnores: ["**/ffmpeg-core/**", "build.json"],
         maximumFileSizeToCacheInBytes: 40 * 1024 * 1024,
         navigateFallback: "/shaderwave-studio/index.html",
       },
