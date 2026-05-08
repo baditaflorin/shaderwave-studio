@@ -266,7 +266,11 @@ function App() {
       anchor.download = `${project.name.replace(/\.[^.]+$/, "") || "shaderwave"}-visualizer.mp4`;
       anchor.click();
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Export failed.");
+      setToast(
+        error instanceof Error
+          ? error.message
+          : `Export failed: ${String(error)}`,
+      );
     } finally {
       setIsExporting(false);
     }
