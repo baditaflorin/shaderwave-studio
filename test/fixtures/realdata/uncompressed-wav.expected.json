@@ -1,0 +1,12 @@
+{
+  "fixtureVersion": 1,
+  "source": "https://samplelib.com/lib/preview/wav/sample-15s.wav",
+  "expected": {
+    "status": "loaded",
+    "container": "wav",
+    "profile": "song",
+    "durationSeconds": { "min": 18, "max": 20 },
+    "warnings": [],
+    "confidence": { "min": 0.8 }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "fixtureVersion": 1,
+  "source": "local HTML renamed to .mp3 adversarial edge case",
+  "expected": {
+    "status": "rejected",
+    "errorCode": "not_audio",
+    "messageIncludes": ["not", "audio"]
+  }
+}

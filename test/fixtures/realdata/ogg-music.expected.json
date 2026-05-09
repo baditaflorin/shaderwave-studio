@@ -1,0 +1,12 @@
+{
+  "fixtureVersion": 1,
+  "source": "https://sample-files.com/audio/ogg/",
+  "expected": {
+    "status": "loaded",
+    "container": "ogg",
+    "profile": "song",
+    "durationSeconds": { "min": 29, "max": 31 },
+    "warnings": [],
+    "confidence": { "min": 0.8 }
+  }
+}

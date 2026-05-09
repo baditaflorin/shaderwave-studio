@@ -1,0 +1,12 @@
+{
+  "fixtureVersion": 1,
+  "source": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+  "expected": {
+    "status": "loaded",
+    "container": "mp3",
+    "profile": "partial",
+    "durationSeconds": { "min": 4, "max": 6 },
+    "warnings": ["partial_stream"],
+    "confidence": { "min": 0.5 }
+  }
+}

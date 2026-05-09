@@ -1,0 +1,12 @@
+{
+  "fixtureVersion": 1,
+  "source": "https://samplefile.com/samples/audio/m4a/",
+  "expected": {
+    "status": "loaded",
+    "container": "m4a",
+    "profile": "song",
+    "durationSeconds": { "min": 14, "max": 16 },
+    "warnings": [],
+    "confidence": { "min": 0.8 }
+  }
+}

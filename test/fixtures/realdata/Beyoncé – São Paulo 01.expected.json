@@ -1,0 +1,12 @@
+{
+  "fixtureVersion": 1,
+  "source": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+  "expected": {
+    "status": "loaded",
+    "container": "mp3",
+    "profile": "long_track",
+    "durationSeconds": { "min": 360, "max": 380 },
+    "warnings": ["long_track"],
+    "confidence": { "min": 0.75 }
+  }
+}

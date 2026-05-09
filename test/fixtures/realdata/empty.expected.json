@@ -1,0 +1,9 @@
+{
+  "fixtureVersion": 1,
+  "source": "local zero-byte edge case",
+  "expected": {
+    "status": "rejected",
+    "errorCode": "empty_file",
+    "messageIncludes": ["empty", "audio"]
+  }
+}
