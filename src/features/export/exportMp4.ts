@@ -4,11 +4,15 @@ import { sampleBandsAtTime } from "../audio/analyze";
 import type { AudioAnalysis } from "../audio/types";
 import type { VisualSettings } from "../project/settings";
 import { drawShaderFrame2d } from "../visualizer/draw2d";
+import type { ExportProvenance } from "./provenance";
+import { stableStringify } from "./provenance";
 
 interface ExportOptions {
   analysis: AudioAnalysis;
   audioFile: File;
   settings: VisualSettings;
+  provenance: ExportProvenance;
+  signal?: AbortSignal;
   onProgress: (progress: number, label: string) => void;
 }
 
@@ -17,9 +21,12 @@ let ffmpegInstance: import("@ffmpeg/ffmpeg").FFmpeg | null = null;
 export async function exportMp4({
   analysis,
   audioFile,
+  provenance,
+  signal,
   settings,
   onProgress,
 }: ExportOptions): Promise<Blob> {
+  assertNotAborted(signal);
   const duration = Math.min(settings.exportDuration, analysis.duration);
   const frameCount = Math.max(1, Math.floor(duration * settings.exportFps));
   const canvas = document.createElement("canvas");
@@ -32,6 +39,7 @@ export async function exportMp4({
   }
 
   const ffmpeg = await loadFfmpeg(onProgress);
+  assertNotAborted(signal);
   const frameDir = "frames";
   await safeDelete(ffmpeg, "shaderwave-export.mp4");
   await safeDelete(ffmpeg, "input-audio");
@@ -39,6 +47,7 @@ export async function exportMp4({
   await ffmpeg.createDir(frameDir);
 
   for (let frame = 0; frame < frameCount; frame += 1) {
+    assertNotAborted(signal);
     const time = frame / settings.exportFps;
     const bands = sampleBandsAtTime(analysis, time);
     drawShaderFrame2d({
@@ -63,12 +72,15 @@ export async function exportMp4({
 
   const extension = audioExtension(audioFile);
   const audioName = `input-audio.${extension}`;
+  assertNotAborted(signal);
   await ffmpeg.writeFile(
     audioName,
     new Uint8Array(await audioFile.arrayBuffer()),
   );
 
+  const metadata = stableStringify(provenance);
   const args = [
+    "-hide_banner",
     "-framerate",
     String(settings.exportFps),
     "-i",
@@ -90,6 +102,14 @@ export async function exportMp4({
     "aac",
     "-b:a",
     "192k",
+    "-metadata",
+    `title=${provenance.source.fileName}`,
+    "-metadata",
+    `artist=${provenance.app.name}`,
+    "-metadata",
+    `comment=${metadata}`,
+    "-metadata",
+    "creation_time=1970-01-01T00:00:00.000000Z",
     "-movflags",
     "faststart",
     "shaderwave-export.mp4",
@@ -97,6 +117,7 @@ export async function exportMp4({
 
   onProgress(0.74, "Encoding MP4");
   let code = await ffmpeg.exec(args);
+  assertNotAborted(signal);
 
   if (code !== 0) {
     onProgress(0.78, "Retrying encoder fallback");
@@ -118,8 +139,13 @@ export async function exportMp4({
       "yuv420p",
       "-c:a",
       "aac",
+      "-metadata",
+      `comment=${metadata}`,
+      "-metadata",
+      "creation_time=1970-01-01T00:00:00.000000Z",
       "shaderwave-export.mp4",
     ]);
+    assertNotAborted(signal);
   }
 
   if (code !== 0) {
@@ -137,6 +163,12 @@ export async function exportMp4({
   new Uint8Array(output).set(data);
 
   return new Blob([output], { type: "video/mp4" });
+}
+
+function assertNotAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw new DOMException("Export cancelled.", "AbortError");
+  }
 }
 
 async function loadFfmpeg(onProgress: ExportOptions["onProgress"]) {

@@ -1,4 +1,5 @@
 import { analyzeSamples } from "./analyze";
+import { buildAudioInsight } from "./intelligence";
 import type { AudioProject } from "./types";
 
 export function createDemoProject(): AudioProject {
@@ -7,16 +8,33 @@ export function createDemoProject(): AudioProject {
   const samples = createDemoSamples(sampleRate, duration);
   const wav = encodeWav(samples, sampleRate);
   const file = new File([wav], "shaderwave-demo.wav", { type: "audio/wav" });
+  const analysis = analyzeSamples(samples, sampleRate, {
+    channelCount: 1,
+  });
+  const source = {
+    id: "aud-demo-shaderwave",
+    fingerprint: "demo-shaderwave-studio",
+    fileName: file.name,
+    safeBaseName: "shaderwave-demo",
+    mimeType: file.type,
+    size: file.size,
+    extension: "wav",
+    container: "wav" as const,
+    containerConfidence: 1,
+    sniffReason: "Generated demo WAV in the browser.",
+    probablePartial: false,
+  };
 
   return {
+    id: source.id,
     name: file.name,
     mimeType: file.type,
     size: file.size,
     url: URL.createObjectURL(file),
     file,
-    analysis: analyzeSamples(samples, sampleRate, {
-      channelCount: 1,
-    }),
+    analysis,
+    source,
+    insight: buildAudioInsight(source, analysis),
   };
 }
 

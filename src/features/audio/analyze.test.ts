@@ -23,6 +23,7 @@ describe("audio analysis", () => {
     expect(analysis.bands.length).toBeGreaterThan(0);
     expect(analysis.bands[0]).toHaveLength(FFT_BAND_COUNT);
     expect(analysis.spectrogram[0]).toHaveLength(SPECTROGRAM_BINS);
+    expect(analysis.loudness.rms).toBeGreaterThan(0.1);
     expect(Math.max(...sampleBandsAtTime(analysis, 0.4))).toBeGreaterThan(0.5);
   });
 

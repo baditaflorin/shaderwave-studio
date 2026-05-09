@@ -1,7 +1,13 @@
 import {
+  Activity,
+  AlertTriangle,
+  Bug,
+  CheckCircle2,
+  Clock,
   Download,
   Gauge,
   Heart,
+  Info,
   Music2,
   Pause,
   Play,
@@ -9,6 +15,8 @@ import {
   Sparkles,
   Star,
   Upload,
+  X,
+  XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -20,14 +28,21 @@ import {
   PAYPAL_URL,
   REPO_URL,
 } from "./config/app";
-import {
-  decodeAudioFile,
-  sampleBandsAtTime,
-  smoothBands,
-} from "./features/audio/analyze";
+import { sampleBandsAtTime, smoothBands } from "./features/audio/analyze";
 import { createDemoProject } from "./features/audio/demo";
-import type { AudioProject } from "./features/audio/types";
+import {
+  issueToWarning,
+  toUserFacingAudioIssue,
+  type UserFacingAudioIssue,
+} from "./features/audio/errors";
+import { analyzeAudioFile } from "./features/audio/intelligence";
+import type { AudioProject, AudioWarning } from "./features/audio/types";
 import { exportMp4 } from "./features/export/exportMp4";
+import {
+  buildExportProvenance,
+  stableStringify,
+  type ExportProvenance,
+} from "./features/export/provenance";
 import {
   defaultVisualSettings,
   loadVisualSettings,
@@ -42,12 +57,45 @@ import { presetLabels } from "./features/visualizer/presets";
 
 const zeroBands = new Array<number>(FFT_BAND_COUNT).fill(0);
 
+type WorkState =
+  | "analyzing"
+  | "cancelled"
+  | "empty"
+  | "export-ready"
+  | "exporting"
+  | "ready-ok"
+  | "ready-warning"
+  | "rejected-recoverable";
+
+interface ProgressState {
+  progress: number;
+  label: string;
+}
+
+interface SessionEvent {
+  id: string;
+  label: string;
+  detail: string;
+  at: string;
+}
+
+const exportSettingKeys = new Set<keyof VisualSettings>([
+  "exportDuration",
+  "exportFps",
+  "exportWidth",
+  "exportHeight",
+]);
+
 function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const projectUrlRef = useRef<string | null>(null);
   const downloadUrlRef = useRef<string | null>(null);
   const playheadRef = useRef(0);
+  const analysisAbortRef = useRef<AbortController | null>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
+  const eventSequenceRef = useRef(0);
+  const userEditedExportRef = useRef(false);
 
   const [settings, setSettings] = useState<VisualSettings>(() =>
     typeof window === "undefined"
@@ -61,11 +109,17 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState<{
-    progress: number;
-    label: string;
-  } | null>(null);
+  const [analysisProgress, setAnalysisProgress] =
+    useState<ProgressState | null>(null);
+  const [exportProgress, setExportProgress] = useState<ProgressState | null>(
+    null,
+  );
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [lastIssue, setLastIssue] = useState<UserFacingAudioIssue | null>(null);
+  const [lastProvenance, setLastProvenance] = useState<ExportProvenance | null>(
+    null,
+  );
+  const [sessionLog, setSessionLog] = useState<SessionEvent[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
   const capabilities = useMemo(
@@ -79,6 +133,46 @@ function App() {
     ],
     [],
   );
+
+  const debugEnabled = useMemo(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).has("debug"),
+    [],
+  );
+
+  const workState: WorkState = useMemo(() => {
+    if (isAnalyzing) {
+      return "analyzing";
+    }
+    if (isExporting) {
+      return "exporting";
+    }
+    if (downloadUrl) {
+      return "export-ready";
+    }
+    if (lastIssue) {
+      return "rejected-recoverable";
+    }
+    if (project?.insight.warnings.length) {
+      return "ready-warning";
+    }
+    if (project) {
+      return "ready-ok";
+    }
+    return "empty";
+  }, [downloadUrl, isAnalyzing, isExporting, lastIssue, project]);
+
+  const appendEvent = useCallback((label: string, detail: string) => {
+    eventSequenceRef.current += 1;
+    const nextEvent: SessionEvent = {
+      id: `evt-${eventSequenceRef.current}`,
+      label,
+      detail,
+      at: new Date().toISOString(),
+    };
+    setSessionLog((current) => [nextEvent, ...current].slice(0, 8));
+  }, []);
 
   useEffect(() => {
     saveVisualSettings(settings);
@@ -117,6 +211,8 @@ function App() {
 
   useEffect(
     () => () => {
+      analysisAbortRef.current?.abort();
+      exportAbortRef.current?.abort();
       if (projectUrlRef.current) {
         URL.revokeObjectURL(projectUrlRef.current);
       }
@@ -133,6 +229,8 @@ function App() {
     }
     projectUrlRef.current = nextProject.url;
     setProject(nextProject);
+    setLastIssue(null);
+    setLastProvenance(null);
     setPlayhead(0);
     setBands(zeroBands);
     setIsPlaying(false);
@@ -143,10 +241,24 @@ function App() {
       key: Key,
       value: VisualSettings[Key],
     ) => {
+      if (exportSettingKeys.has(key)) {
+        userEditedExportRef.current = true;
+      }
       setSettings((current) => ({ ...current, [key]: value }));
     },
     [],
   );
+
+  const applySuggestedExport = useCallback((nextProject: AudioProject) => {
+    const suggestion = nextProject.insight.suggestedExport;
+    setSettings((current) => ({
+      ...current,
+      exportDuration: suggestion.seconds,
+      exportFps: suggestion.fps,
+      exportWidth: suggestion.width,
+      exportHeight: suggestion.height,
+    }));
+  }, []);
 
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -155,54 +267,109 @@ function App() {
         return;
       }
 
-      if (
-        !file.type.startsWith("audio/") &&
-        !/\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(file.name)
-      ) {
-        setToast("Choose an audio file.");
-        return;
-      }
+      analysisAbortRef.current?.abort();
+      exportAbortRef.current?.abort();
+      const controller = new AbortController();
+      analysisAbortRef.current = controller;
 
       setIsAnalyzing(true);
+      setIsExporting(false);
+      setAnalysisProgress({ progress: 0, label: "Reading source" });
+      setExportProgress(null);
       setToast(null);
 
       try {
-        const analysis = await decodeAudioFile(file);
-        replaceProject({
+        const result = await analyzeAudioFile(file, {
+          signal: controller.signal,
+          onProgress: (progress, label) =>
+            setAnalysisProgress({ progress, label }),
+        });
+        const nextProject: AudioProject = {
+          id: result.source.id,
           name: file.name,
           mimeType: file.type || "audio",
           size: file.size,
           url: URL.createObjectURL(file),
           file,
-          analysis,
-        });
-      } catch (error) {
-        setToast(
-          error instanceof Error ? error.message : "Audio decode failed.",
+          analysis: result.analysis,
+          source: result.source,
+          insight: result.insight,
+          fromCache: result.fromCache,
+        };
+
+        replaceProject(nextProject);
+        if (!userEditedExportRef.current) {
+          applySuggestedExport(nextProject);
+        }
+        appendEvent(
+          "Loaded audio",
+          `${result.insight.profileLabel} (${Math.round(result.insight.confidence * 100)}% confidence)`,
         );
+      } catch (error) {
+        if (
+          analysisAbortRef.current !== controller &&
+          controller.signal.aborted
+        ) {
+          return;
+        }
+        const issue = toUserFacingAudioIssue(error);
+        setLastIssue(issue);
+        appendEvent(
+          issue.code === "analysis_cancelled"
+            ? "Cancelled analysis"
+            : "Rejected audio",
+          issue.message,
+        );
+        setToast(issue.message);
       } finally {
-        setIsAnalyzing(false);
+        if (analysisAbortRef.current === controller) {
+          analysisAbortRef.current = null;
+          setIsAnalyzing(false);
+          setAnalysisProgress(null);
+        }
       }
     },
-    [replaceProject],
+    [appendEvent, applySuggestedExport, replaceProject],
   );
 
+  const cancelAnalysis = useCallback(() => {
+    analysisAbortRef.current?.abort();
+    setIsAnalyzing(false);
+    setAnalysisProgress(null);
+    setLastIssue(
+      toUserFacingAudioIssue(new DOMException("Cancelled", "AbortError")),
+    );
+    appendEvent("Cancelled analysis", "Current project was preserved.");
+  }, [appendEvent]);
+
+  const cancelExport = useCallback(() => {
+    exportAbortRef.current?.abort();
+    setIsExporting(false);
+    setExportProgress({ progress: 0, label: "Export cancelled" });
+    appendEvent("Cancelled export", "No project data was changed.");
+  }, [appendEvent]);
+
   const handleDemo = useCallback(() => {
+    analysisAbortRef.current?.abort();
+    exportAbortRef.current?.abort();
     setIsAnalyzing(true);
     window.setTimeout(() => {
       try {
-        replaceProject(createDemoProject());
+        const demo = createDemoProject();
+        replaceProject(demo);
+        if (!userEditedExportRef.current) {
+          applySuggestedExport(demo);
+        }
+        appendEvent("Loaded demo", "Generated browser demo audio.");
       } catch (error) {
-        setToast(
-          error instanceof Error
-            ? error.message
-            : "Could not create demo audio.",
-        );
+        const issue = toUserFacingAudioIssue(error);
+        setLastIssue(issue);
+        setToast(issue.message);
       } finally {
         setIsAnalyzing(false);
       }
     }, 0);
-  }, [replaceProject]);
+  }, [appendEvent, applySuggestedExport, replaceProject]);
 
   const togglePlayback = useCallback(async () => {
     const audio = audioRef.current;
@@ -243,13 +410,27 @@ function App() {
       return;
     }
 
+    exportAbortRef.current?.abort();
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
     setIsExporting(true);
     setExportProgress({ progress: 0, label: "Preparing export" });
 
     try {
+      const provenance = buildExportProvenance({
+        app: {
+          name: APP_NAME,
+          version: APP_VERSION,
+          commit: APP_COMMIT,
+        },
+        project,
+        settings,
+      });
       const video = await exportMp4({
         analysis: project.analysis,
         audioFile: project.file,
+        provenance,
+        signal: controller.signal,
         settings,
         onProgress: (progress, label) => setExportProgress({ progress, label }),
       });
@@ -260,26 +441,64 @@ function App() {
       }
       downloadUrlRef.current = url;
       setDownloadUrl(url);
+      setLastProvenance(provenance);
 
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `${project.name.replace(/\.[^.]+$/, "") || "shaderwave"}-visualizer.mp4`;
+      anchor.download = `${project.source.safeBaseName}-visualizer.mp4`;
       anchor.click();
+      appendEvent(
+        "Exported MP4",
+        `${settings.exportDuration}s at ${settings.exportFps} FPS`,
+      );
     } catch (error) {
+      if (exportAbortRef.current !== controller && controller.signal.aborted) {
+        return;
+      }
+      const issue = toUserFacingAudioIssue(error);
+      appendEvent(
+        issue.code === "analysis_cancelled"
+          ? "Cancelled export"
+          : "Export failed",
+        issue.message,
+      );
       setToast(
-        error instanceof Error
-          ? error.message
-          : `Export failed: ${String(error)}`,
+        issue.code === "analysis_cancelled"
+          ? "Export cancelled."
+          : `${issue.message} ${issue.nextStep}`,
       );
     } finally {
-      setIsExporting(false);
+      if (exportAbortRef.current === controller) {
+        exportAbortRef.current = null;
+        setIsExporting(false);
+      }
     }
-  }, [project, settings]);
+  }, [appendEvent, project, settings]);
 
   const projectDuration = project?.analysis.duration ?? 0;
   const exportLabel = exportProgress
     ? `${exportProgress.label} ${Math.round(exportProgress.progress * 100)}%`
     : "Ready";
+  const visibleIssue = lastIssue ? issueToWarning(lastIssue) : null;
+  const debugPayload = useMemo(
+    () =>
+      stableStringify({
+        state: workState,
+        project: project
+          ? {
+              id: project.id,
+              source: project.source,
+              insight: project.insight,
+              fromCache: project.fromCache ?? false,
+            }
+          : null,
+        lastIssue,
+        settings,
+        sessionLog,
+        lastProvenance,
+      }),
+    [lastIssue, lastProvenance, project, sessionLog, settings, workState],
+  );
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
@@ -382,6 +601,26 @@ function App() {
             ) : null}
           </div>
 
+          <AudioHealthPanel
+            issue={visibleIssue}
+            isAnalyzing={isAnalyzing}
+            onApplySuggestion={() => {
+              if (project) {
+                userEditedExportRef.current = false;
+                applySuggestedExport(project);
+                appendEvent(
+                  "Applied export suggestion",
+                  project.insight.suggestedExport.reason,
+                );
+              }
+            }}
+            onCancelAnalysis={cancelAnalysis}
+            progress={analysisProgress}
+            project={project}
+            settings={settings}
+            state={workState}
+          />
+
           <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-normal text-slate-700">
               <Gauge aria-hidden="true" size={17} />
@@ -439,7 +678,7 @@ function App() {
                   size={34}
                 />
                 <p className="text-sm font-medium text-slate-800">
-                  Drop MP3/WAV/M4A
+                  Drop audio file
                 </p>
                 <div className="flex flex-wrap justify-center gap-2">
                   <button
@@ -460,6 +699,16 @@ function App() {
                     <Sparkles aria-hidden="true" size={17} />
                     Demo
                   </button>
+                  {isAnalyzing ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-medium text-rose-800 shadow-sm hover:border-rose-400"
+                      onClick={cancelAnalysis}
+                    >
+                      <X aria-hidden="true" size={17} />
+                      Cancel
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -476,7 +725,7 @@ function App() {
             />
             {isAnalyzing ? (
               <p className="mt-3 text-sm font-medium text-cyan-800">
-                Analyzing audio...
+                {analysisProgress?.label ?? "Analyzing audio..."}
               </p>
             ) : null}
           </section>
@@ -580,6 +829,16 @@ function App() {
               <Download aria-hidden="true" size={18} />
               {isExporting ? "Exporting" : "Export MP4"}
             </button>
+            {isExporting ? (
+              <button
+                type="button"
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-medium text-rose-800 shadow-sm hover:border-rose-400"
+                onClick={cancelExport}
+              >
+                <X aria-hidden="true" size={17} />
+                Cancel export
+              </button>
+            ) : null}
             <div className="mt-3 h-2 overflow-hidden rounded bg-slate-200">
               <div
                 className="h-full bg-cyan-600"
@@ -590,16 +849,32 @@ function App() {
             </div>
             <p className="mt-2 text-xs text-slate-500">{exportLabel}</p>
             {downloadUrl ? (
-              <a
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium shadow-sm hover:border-slate-500"
-                href={downloadUrl}
-                download="shaderwave-visualizer.mp4"
-              >
-                <Download aria-hidden="true" size={17} />
-                Download last export
-              </a>
+              <div className="mt-3 grid gap-2">
+                <a
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium shadow-sm hover:border-slate-500"
+                  href={downloadUrl}
+                  download="shaderwave-visualizer.mp4"
+                >
+                  <Download aria-hidden="true" size={17} />
+                  Download last export
+                </a>
+                {lastProvenance ? (
+                  <a
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium shadow-sm hover:border-slate-500"
+                    href={`data:application/json;charset=utf-8,${encodeURIComponent(
+                      stableStringify(lastProvenance),
+                    )}`}
+                    download={`${project?.source.safeBaseName ?? "shaderwave"}-provenance.json`}
+                  >
+                    <Info aria-hidden="true" size={17} />
+                    Download provenance
+                  </a>
+                ) : null}
+              </div>
             ) : null}
           </section>
+
+          <SessionLog events={sessionLog} />
 
           <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 text-sm font-semibold uppercase tracking-normal text-slate-700">
@@ -628,8 +903,235 @@ function App() {
         </aside>
       </div>
 
+      {debugEnabled ? <DebugPanel payload={debugPayload} /> : null}
       <Toast message={toast} onDismiss={() => setToast(null)} />
     </main>
+  );
+}
+
+interface AudioHealthPanelProps {
+  issue: AudioWarning | null;
+  isAnalyzing: boolean;
+  onApplySuggestion: () => void;
+  onCancelAnalysis: () => void;
+  progress: ProgressState | null;
+  project: AudioProject | null;
+  settings: VisualSettings;
+  state: WorkState;
+}
+
+function AudioHealthPanel({
+  issue,
+  isAnalyzing,
+  onApplySuggestion,
+  onCancelAnalysis,
+  progress,
+  project,
+  settings,
+  state,
+}: AudioHealthPanelProps) {
+  const warnings = project?.insight.warnings ?? (issue ? [issue] : []);
+  const confidence = project ? Math.round(project.insight.confidence * 100) : 0;
+  const suggestion = project?.insight.suggestedExport;
+  const currentFrameCount = settings.exportDuration * settings.exportFps;
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-normal text-slate-700">
+          <Activity aria-hidden="true" size={17} />
+          Audio health
+        </div>
+        <StatePill state={state} />
+      </div>
+
+      {isAnalyzing ? (
+        <div className="grid gap-3">
+          <div>
+            <div className="mb-2 flex justify-between text-sm text-slate-600">
+              <span>{progress?.label ?? "Analyzing audio"}</span>
+              <span>{Math.round((progress?.progress ?? 0) * 100)}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded bg-slate-200">
+              <div
+                className="h-full bg-cyan-600"
+                style={{
+                  width: `${Math.round((progress?.progress ?? 0) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            className="inline-flex w-fit items-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-medium text-rose-800 shadow-sm hover:border-rose-400"
+            onClick={onCancelAnalysis}
+          >
+            <X aria-hidden="true" size={17} />
+            Cancel analysis
+          </button>
+        </div>
+      ) : null}
+
+      {!isAnalyzing && !project && !issue ? (
+        <p className="text-sm text-slate-500">
+          Load audio to see source health.
+        </p>
+      ) : null}
+
+      {project ? (
+        <div className="grid gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-slate-950 px-2 py-1 text-sm font-medium text-white">
+              {project.insight.profileLabel}
+            </span>
+            <span className="rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-700">
+              {confidence}% confidence
+            </span>
+            {project.fromCache ? (
+              <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-sm text-emerald-800">
+                Cached analysis
+              </span>
+            ) : null}
+          </div>
+          <p className="text-sm text-slate-600">{project.insight.summary}</p>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            {project.insight.facts.map((fact) => (
+              <div
+                key={fact.label}
+                className="rounded-md border border-slate-200 px-3 py-2"
+                title={fact.explanation}
+              >
+                <div className="text-xs uppercase tracking-normal text-slate-500">
+                  {fact.label}
+                </div>
+                <div className="mt-1 truncate text-sm font-semibold text-slate-800">
+                  {fact.value}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {suggestion ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-cyan-100 bg-cyan-50 px-3 py-2 text-sm text-cyan-950">
+              <span>
+                Suggested export: {suggestion.seconds}s, {suggestion.fps} FPS,{" "}
+                {suggestion.frameCount} frames
+              </span>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-md border border-cyan-300 bg-white px-3 py-1.5 text-sm font-medium shadow-sm hover:border-cyan-600"
+                onClick={onApplySuggestion}
+              >
+                <CheckCircle2 aria-hidden="true" size={16} />
+                Apply
+              </button>
+            </div>
+          ) : null}
+          {currentFrameCount > 900 ? (
+            <WarningItem
+              warning={{
+                code: "large_render",
+                title: "Large render job",
+                message: "The current export settings will render many frames.",
+                why: `${currentFrameCount} frames are queued at the current duration and FPS.`,
+                nextStep: "Use the suggested range while iterating.",
+                severity: "warning",
+                confidence: 0.95,
+              }}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {warnings.length > 0 ? (
+        <div className="mt-3 grid gap-2">
+          {warnings.map((warning) => (
+            <WarningItem key={warning.code} warning={warning} />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function WarningItem({ warning }: { warning: AudioWarning }) {
+  const Icon =
+    warning.severity === "error"
+      ? XCircle
+      : warning.severity === "warning"
+        ? AlertTriangle
+        : Info;
+  const tone =
+    warning.severity === "error"
+      ? "border-rose-200 bg-rose-50 text-rose-950"
+      : warning.severity === "warning"
+        ? "border-amber-200 bg-amber-50 text-amber-950"
+        : "border-slate-200 bg-slate-50 text-slate-800";
+
+  return (
+    <div className={`rounded-md border px-3 py-2 text-sm ${tone}`}>
+      <div className="flex items-start gap-2">
+        <Icon aria-hidden="true" className="mt-0.5 shrink-0" size={17} />
+        <div className="min-w-0">
+          <div className="font-semibold">{warning.title}</div>
+          <p className="mt-1">{warning.message}</p>
+          <p className="mt-1 text-xs opacity-80">{warning.why}</p>
+          <p className="mt-1 text-xs font-medium">{warning.nextStep}</p>
+        </div>
+        <span className="ml-auto shrink-0 text-xs tabular-nums opacity-80">
+          {Math.round(warning.confidence * 100)}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function StatePill({ state }: { state: WorkState }) {
+  const label = state.replace(/-/g, " ");
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium uppercase tracking-normal text-slate-600">
+      <Clock aria-hidden="true" size={14} />
+      {label}
+    </span>
+  );
+}
+
+function SessionLog({ events }: { events: SessionEvent[] }) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-normal text-slate-700">
+        <Clock aria-hidden="true" size={17} />
+        Session log
+      </div>
+      {events.length === 0 ? (
+        <p className="text-sm text-slate-500">No audio activity yet.</p>
+      ) : (
+        <ol className="grid gap-2">
+          {events.map((event) => (
+            <li
+              key={event.id}
+              className="rounded-md border border-slate-200 px-3 py-2 text-sm"
+            >
+              <div className="font-medium text-slate-800">{event.label}</div>
+              <div className="mt-1 text-slate-500">{event.detail}</div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function DebugPanel({ payload }: { payload: string }) {
+  return (
+    <section className="fixed bottom-4 right-4 z-40 max-h-[50vh] w-[min(92vw,520px)] overflow-auto rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-cyan-50 shadow-lg">
+      <div className="mb-2 flex items-center gap-2 font-semibold uppercase tracking-normal">
+        <Bug aria-hidden="true" size={15} />
+        Debug
+      </div>
+      <pre className="whitespace-pre-wrap break-words">{payload}</pre>
+    </section>
   );
 }
 

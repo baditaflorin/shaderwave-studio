@@ -5,7 +5,7 @@ import {
   MAX_ANALYSIS_FRAMES,
   SPECTROGRAM_BINS,
 } from "../../config/app";
-import type { AnalyzeOptions, AudioAnalysis } from "./types";
+import type { AnalyzeOptions, AudioAnalysis, AudioLoudness } from "./types";
 
 const minHz = 35;
 const minDb = -82;
@@ -86,6 +86,7 @@ export function analyzeSamples(
     duration,
     sampleRate,
     channelCount: options.channelCount ?? 1,
+    loudness: measureLoudness(samples),
     waveform: buildWaveform(samples, 256),
     spectrogram,
     bands,
@@ -130,6 +131,42 @@ export function smoothBands(
   return next.map(
     (value, index) => previous[index] * smoothing + value * (1 - smoothing),
   );
+}
+
+export function measureLoudness(samples: Float32Array): AudioLoudness {
+  if (samples.length === 0) {
+    return {
+      rms: 0,
+      peak: 0,
+      clippedRatio: 0,
+      quietRatio: 1,
+    };
+  }
+
+  let sumSquares = 0;
+  let peak = 0;
+  let clipped = 0;
+  let quiet = 0;
+
+  for (const sample of samples) {
+    const absolute = Math.abs(sample);
+    sumSquares += sample * sample;
+    peak = Math.max(peak, absolute);
+
+    if (absolute >= 0.985) {
+      clipped += 1;
+    }
+    if (absolute < 0.002) {
+      quiet += 1;
+    }
+  }
+
+  return {
+    rms: Math.sqrt(sumSquares / samples.length),
+    peak,
+    clippedRatio: clipped / samples.length,
+    quietRatio: quiet / samples.length,
+  };
 }
 
 function edgesToMagnitudes(
