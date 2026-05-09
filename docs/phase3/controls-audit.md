@@ -17,6 +17,13 @@ Date: 2026-05-10
 - `Download last export`
 - `Download provenance`
 - `Apply` suggested export
+- `Save project`
+- `Import state`
+- `Copy state`
+- `Copy provenance`
+- `Copy scene link`
+- `Load pasted state`
+- `Start fresh`
 - `Star`
 - `Support`
 
@@ -25,14 +32,12 @@ Date: 2026-05-10
 - Runtime capability badges
   They reflect capability presence, but do not link to next-step guidance.
 - Debug overlay via `?debug=1`
-  Useful, but undiscoverable and not documented in README.
+  Useful and now documented, but still discoverable only through docs.
 
 ## Red
 
-- No import-state control
-- No save-project control
-- No copy-to-clipboard output control
-- No reset / clear-state control
+- No multi-file batch control
+- No clipboard-read input control
 
 ## Phase 3 Goal
 

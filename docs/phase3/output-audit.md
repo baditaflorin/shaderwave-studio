@@ -2,18 +2,18 @@
 
 Date: 2026-05-10
 
-| Pathway                    | Status   | Notes                                                                |
-| -------------------------- | -------- | -------------------------------------------------------------------- |
-| MP4 export                 | `green`  | Export works with progress and cancellation.                         |
-| Download last export       | `green`  | Uses generated object URL.                                           |
-| Provenance JSON download   | `green`  | Sidecar metadata export exists.                                      |
-| Copy output to clipboard   | `red`    | No clipboard pathway.                                                |
-| Downloadable project state | `red`    | Not built.                                                           |
-| Import/export round-trip   | `red`    | Not built.                                                           |
-| Shareable URL              | `red`    | Not built.                                                           |
-| Print/PDF                  | `red`    | Not built and not essential for v3.                                  |
-| Embed code                 | `red`    | Not built.                                                           |
-| Automation-ready JSON      | `yellow` | Provenance JSON exists, but there is no canonical full-state export. |
+| Pathway                    | Status   | Notes                                                                                |
+| -------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| MP4 export                 | `green`  | Export works with progress and cancellation.                                         |
+| Download last export       | `green`  | Uses generated object URL.                                                           |
+| Provenance JSON download   | `green`  | Sidecar metadata export exists.                                                      |
+| Copy output to clipboard   | `green`  | Full project state, provenance, and scene link each have copy controls.              |
+| Downloadable project state | `green`  | Portable project JSON captures audio file, analysis, settings, log, and provenance.  |
+| Import/export round-trip   | `green`  | Project JSON re-import passes in browser e2e.                                        |
+| Shareable URL              | `yellow` | Works for smaller sessions; larger ones intentionally fall back to saved JSON.       |
+| Print/PDF                  | `red`    | Not built and still not essential for Phase 3.                                       |
+| Embed code                 | `red`    | Not built.                                                                           |
+| Automation-ready JSON      | `green`  | Portable session JSON is now the canonical interchange format for manual automation. |
 
 ## Phase 3 Goal
 
