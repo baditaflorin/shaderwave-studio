@@ -1,7 +1,7 @@
 {
   "name": "shaderwave-studio",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Drop an MP3, bind FFT bands to WebGPU shaders, preview visuals, and export MP4 entirely in the browser.",
   "type": "module",
   "scripts": {

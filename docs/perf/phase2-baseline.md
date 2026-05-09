@@ -16,6 +16,27 @@ Measured on 2026-05-08 in Chromium via the local Pages preview.
 
 Export smoke used 2 seconds at 12 FPS / 480x270. Valid files exported in 1.7s to 4.2s.
 
+## Phase 2 After Numbers
+
+Measured after the substance implementation with the Playwright real-data fixture suite on the local Pages preview.
+
+| Input                       | Phase 2 result                            | E2E elapsed |
+| --------------------------- | ----------------------------------------- | ----------: |
+| `Beyonce/Sao Paulo unicode` | Loaded with long-track warning            |        3.4s |
+| `clean-long-mp3.mp3`        | Loaded with long-track warning            |        3.3s |
+| `empty.mp3`                 | Rejected with actionable empty-file error |        0.7s |
+| `long-m4a.m4a`              | Loaded with long-track warning            |        2.2s |
+| `m4a-short.m4a`             | Loaded with no warnings                   |        0.5s |
+| `ogg-music.ogg`             | Loaded with no warnings                   |        0.7s |
+| `spoofed-html.mp3`          | Rejected before decode as non-audio       |        0.7s |
+| `track-001.ogg`             | Loaded with low-energy warning            |        0.4s |
+| `truncated-mp3.mp3`         | Loaded with partial-stream warning        |        0.5s |
+| `uncompressed-wav.wav`      | Loaded with no warnings                   |        0.6s |
+
+Full real-data fixture suite: 10/10 passed in 13.2s. Full smoke suite, including demo export: 12/12 passed in 19.4s.
+
+Determinism check: two identical demo exports at 2 seconds, 12 FPS, 480x270 produced identical SHA-256 hashes: `d07b07461e26d0cf983533cb3ba48077dbfe812215a648a0333fafdf336a6272`.
+
 ## Budgets
 
 - First visible analysis state: under 300ms.
