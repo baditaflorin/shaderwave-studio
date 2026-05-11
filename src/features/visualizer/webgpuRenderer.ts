@@ -89,6 +89,68 @@ fn prismField(uv: vec2f, bass: f32, mid: f32, treble: f32) -> f32 {
   return shell * (0.7 + treble * 0.7) + core * (0.42 + lattice * 0.2);
 }
 
+fn kaleidoscopeField(uv: vec2f, bass: f32, mid: f32, treble: f32) -> f32 {
+  let slices = 8.0;
+  let wedge = 6.28318 / slices;
+  var angle = atan2(uv.y, uv.x) + u.time * 0.18;
+  angle = abs((angle % wedge) - wedge * 0.5);
+  let dist = length(uv);
+  let mirrored = vec2f(cos(angle), sin(angle)) * dist;
+  let band = bandAverage(0, 16);
+  let petals = sin(angle * 12.0 + u.time * (1.4 + mid * 2.4));
+  let ring = sin(dist * (18.0 + bass * 14.0) - u.time * 2.6);
+  let shell = smoothstep(0.7, 0.02, abs(dist - (0.32 + petals * 0.16 + band * 0.18)));
+  let core = pow(1.0 - smoothstep(0.04, 0.55, dist), 2.2);
+  let glints = pow(max(0.0, ring), 4.0) * (0.4 + treble);
+  return shell * (0.6 + treble * 0.8) + core * (0.4 + mid * 0.5) + glints * 0.4 + mirrored.x * 0.0;
+}
+
+fn starfieldField(uv: vec2f, bass: f32, mid: f32, treble: f32) -> f32 {
+  let dist = length(uv);
+  let angle = atan2(uv.y, uv.x);
+  let warp = 0.18 + bass * 0.55 * u.intensity;
+  let radialBands = floor((dist - u.time * warp) * 22.0);
+  let bandPhase = fract((dist - u.time * warp) * 22.0);
+  let twinkle = sin(angle * (18.0 + treble * 14.0) + radialBands * 1.7);
+  let star = pow(max(0.0, twinkle), 6.0) * smoothstep(0.04, 0.16, bandPhase);
+  let trail = pow(max(0.0, sin(bandPhase * 3.14)), 2.0) * 0.4;
+  let haze = pow(1.0 - smoothstep(0.1, 0.85, dist), 2.0) * (0.25 + bass * 0.4);
+  let energy = star * (0.6 + mid * 0.6) + trail * (0.3 + treble * 0.5) + haze;
+  return energy * (0.7 + u.intensity * 0.3);
+}
+
+fn latticeField(uv: vec2f, bass: f32, mid: f32, treble: f32) -> f32 {
+  let scale = 6.0 + bass * 4.0;
+  let warped = uv + vec2f(
+    sin(uv.y * scale + u.time * 1.4) * 0.05 * (1.0 + bass),
+    cos(uv.x * scale + u.time * 1.6) * 0.05 * (1.0 + bass)
+  );
+  let gridX = abs(fract(warped.x * scale) - 0.5);
+  let gridY = abs(fract(warped.y * scale) - 0.5);
+  let line = smoothstep(0.06 + treble * 0.04, 0.0, min(gridX, gridY));
+  let nodeX = step(0.46, 1.0 - gridX);
+  let nodeY = step(0.46, 1.0 - gridY);
+  let nodes = nodeX * nodeY * (0.4 + mid * 0.8);
+  let glow = pow(1.0 - smoothstep(0.0, 0.9, length(uv)), 1.4);
+  return line * (0.6 + treble * 0.5) + nodes + glow * 0.18;
+}
+
+fn auroraField(uv: vec2f, bass: f32, mid: f32, treble: f32) -> f32 {
+  var energy = 0.0;
+  for (var ribbon = 0; ribbon < 6; ribbon = ribbon + 1) {
+    let ribbonT = f32(ribbon) / 5.0;
+    let baseline = -0.4 + ribbonT * 0.9;
+    let amplitude = 0.08 + bass * 0.12 * u.intensity + ribbonT * 0.04;
+    let wave = sin(uv.x * 3.0 + u.time * (0.6 + ribbonT * 0.7) + f32(ribbon))
+      + sin(uv.x * 9.0 - u.time * 1.3 + f32(ribbon)) * 0.3 * (0.5 + mid);
+    let curve = baseline + wave * amplitude;
+    let band = smoothstep(0.0, amplitude * 1.4, amplitude * 1.4 - abs(uv.y - curve));
+    let glow = pow(band, 1.8) * (0.6 + treble * 0.6);
+    energy = energy + glow * (0.8 - ribbonT * 0.4);
+  }
+  return energy;
+}
+
 @fragment
 fn fragmentMain(@builtin(position) frag: vec4f) -> @location(0) vec4f {
   var uv = (frag.xy / u.resolution) * 2.0 - vec2f(1.0, 1.0);
@@ -101,11 +163,19 @@ fn fragmentMain(@builtin(position) frag: vec4f) -> @location(0) vec4f {
   let angle = atan2(uv.y, uv.x);
 
   var energy = prismField(uv, bass, mid, treble);
-  if (u.preset > 0.5 && u.preset < 1.5) {
+  let preset = i32(u.preset + 0.5);
+  if (preset == 1) {
     energy = barsField(uv, bass, mid, treble);
-  }
-  if (u.preset >= 1.5) {
+  } else if (preset == 2) {
     energy = tunnelField(uv, bass, mid, treble);
+  } else if (preset == 3) {
+    energy = kaleidoscopeField(uv, bass, mid, treble);
+  } else if (preset == 4) {
+    energy = starfieldField(uv, bass, mid, treble);
+  } else if (preset == 5) {
+    energy = latticeField(uv, bass, mid, treble);
+  } else if (preset == 6) {
+    energy = auroraField(uv, bass, mid, treble);
   }
 
   let backdrop = vec3f(0.01, 0.02, 0.04)

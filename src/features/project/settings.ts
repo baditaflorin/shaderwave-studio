@@ -1,6 +1,14 @@
 import { z } from "zod";
 
-export const shaderPresetSchema = z.enum(["prism", "bars", "tunnel"]);
+export const shaderPresetSchema = z.enum([
+  "prism",
+  "bars",
+  "tunnel",
+  "kaleidoscope",
+  "starfield",
+  "lattice",
+  "aurora",
+]);
 
 export type ShaderPreset = z.infer<typeof shaderPresetSchema>;
 

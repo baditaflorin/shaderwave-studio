@@ -27,12 +27,29 @@ export function drawShaderFrame2d({
 
   drawBackdrop(context, width, height, hueBase, bass, mid, treble);
 
-  if (settings.preset === "bars") {
-    drawClubColumns(context, width, height, bands, hueBase, intensity, time);
-  } else if (settings.preset === "tunnel") {
-    drawPhaseTunnel(context, width, height, bands, hueBase, intensity, time);
-  } else {
-    drawPrismField(context, width, height, bands, hueBase, intensity, time);
+  switch (settings.preset) {
+    case "bars":
+      drawClubColumns(context, width, height, bands, hueBase, intensity, time);
+      break;
+    case "tunnel":
+      drawPhaseTunnel(context, width, height, bands, hueBase, intensity, time);
+      break;
+    case "kaleidoscope":
+      drawKaleidoscope(context, width, height, bands, hueBase, intensity, time);
+      break;
+    case "starfield":
+      drawStarfield(context, width, height, bands, hueBase, intensity, time);
+      break;
+    case "lattice":
+      drawLatticeGrid(context, width, height, bands, hueBase, intensity, time);
+      break;
+    case "aurora":
+      drawAuroraBands(context, width, height, bands, hueBase, intensity, time);
+      break;
+    case "prism":
+    default:
+      drawPrismField(context, width, height, bands, hueBase, intensity, time);
+      break;
   }
 
   drawWaveCrest(context, width, height, bands, hueBase, intensity, time);
@@ -253,6 +270,339 @@ function drawPrismField(
   restoreContext(context);
 }
 
+function drawKaleidoscope(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  bands: number[],
+  hueBase: number,
+  intensity: number,
+  time: number,
+) {
+  const centerX = width * 0.5;
+  const centerY = height * 0.5;
+  const extent = Math.min(width, height) * 0.46;
+  const slices = 8;
+  const bass = average(bands, 0, 4);
+  const mid = average(bands, 4, 11);
+  const treble = average(bands, 11, bands.length);
+  const wedge = (Math.PI * 2) / slices;
+
+  saveContext(context);
+  context.globalCompositeOperation = "lighter";
+
+  for (let slice = 0; slice < slices; slice += 1) {
+    saveContext(context);
+    context.translate(centerX, centerY);
+    context.rotate(slice * wedge + time * 0.18);
+    if (slice % 2 === 1) {
+      context.scale(1, -1);
+    }
+    context.beginPath();
+    context.moveTo(0, 0);
+    context.arc(0, 0, extent, 0, wedge);
+    context.closePath();
+    context.clip();
+
+    for (let layer = 0; layer < bands.length; layer += 1) {
+      const band = bands[layer] ?? 0;
+      const layerRadius =
+        extent *
+        (0.12 + (layer / bands.length) * 0.78 + band * 0.08 * intensity);
+      const petals = 3 + (layer % 5);
+      context.beginPath();
+      for (let step = 0; step <= 48; step += 1) {
+        const angle = (step / 48) * wedge;
+        const wobble =
+          Math.sin(angle * petals + time * 1.8 + layer) * 6 * (1 + bass);
+        const radius = layerRadius + wobble;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        if (step === 0) {
+          context.moveTo(x, y);
+        } else {
+          context.lineTo(x, y);
+        }
+      }
+      const hue = (hueBase + layer * 13 + slice * 7 + time * 24) % 360;
+      const lightness = 50 + treble * 24 - layer * 1.8;
+      const alpha = 0.16 + band * 0.5 * intensity + mid * 0.08;
+      context.strokeStyle = `hsla(${hue}, 96%, ${Math.max(28, Math.min(80, lightness))}%, ${Math.min(0.9, alpha)})`;
+      context.lineWidth = Math.max(1, width * 0.0028 + band * width * 0.0024);
+      strokePath(context);
+    }
+    restoreContext(context);
+  }
+
+  restoreContext(context);
+}
+
+function drawStarfield(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  bands: number[],
+  hueBase: number,
+  intensity: number,
+  time: number,
+) {
+  const centerX = width * 0.5;
+  const centerY = height * 0.5;
+  const extent = Math.max(width, height);
+  const bass = average(bands, 0, 4);
+  const mid = average(bands, 4, 11);
+  const treble = average(bands, 11, bands.length);
+  const starCount = 220;
+  const warpSpeed = 0.16 + bass * 0.42 * intensity;
+
+  saveContext(context);
+  context.globalCompositeOperation = "lighter";
+
+  for (let index = 0; index < starCount; index += 1) {
+    const seedAngle = (index * 2.3998) % (Math.PI * 2);
+    const seedRadius = (index / starCount) * 0.5 + 0.04;
+    const cycle = (seedRadius + time * warpSpeed) % 1;
+    const eased = Math.pow(cycle, 0.55);
+    const radius = eased * extent * 0.78;
+    const angle = seedAngle + cycle * (0.18 + mid * 0.42);
+
+    const x = centerX + Math.cos(angle) * radius;
+    const y = centerY + Math.sin(angle) * radius * 0.92;
+    const bandIndex = index % bands.length;
+    const band = bands[bandIndex] ?? 0;
+    const size =
+      Math.max(0.6, width * 0.0014) +
+      band * width * 0.005 +
+      eased * width * 0.003;
+    const hue = (hueBase + index * 3 + cycle * 220) % 360;
+    const alpha = 0.18 + (1 - cycle) * 0.62 + band * 0.3;
+
+    context.fillStyle = `hsla(${hue}, 96%, ${72 - cycle * 28}%, ${Math.min(0.95, alpha)})`;
+    context.beginPath();
+    arcPath(context, x, y, size);
+    fillPath(context);
+
+    if (cycle > 0.3) {
+      const trailX = centerX + Math.cos(angle) * radius * 0.86;
+      const trailY = centerY + Math.sin(angle) * radius * 0.86 * 0.92;
+      context.strokeStyle = `hsla(${(hue + 180) % 360}, 96%, ${68 - cycle * 24}%, ${Math.min(0.5, alpha * 0.6)})`;
+      context.lineWidth = Math.max(0.6, size * 0.8);
+      context.beginPath();
+      context.moveTo(trailX, trailY);
+      context.lineTo(x, y);
+      strokePath(context);
+    }
+  }
+
+  const flare = context.createRadialGradient(
+    centerX,
+    centerY,
+    0,
+    centerX,
+    centerY,
+    extent * 0.35,
+  );
+  flare.addColorStop(0, `hsla(${hueBase}, 95%, 80%, ${0.12 + treble * 0.18})`);
+  flare.addColorStop(1, "rgba(0, 0, 0, 0)");
+  context.fillStyle = flare;
+  context.fillRect(0, 0, width, height);
+
+  restoreContext(context);
+}
+
+function drawLatticeGrid(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  bands: number[],
+  hueBase: number,
+  intensity: number,
+  time: number,
+) {
+  const bass = average(bands, 0, 4);
+  const mid = average(bands, 4, 11);
+  const treble = average(bands, 11, bands.length);
+  const cols = 16;
+  const rows = 10;
+  const cellWidth = width / cols;
+  const cellHeight = height / rows;
+
+  saveContext(context);
+  context.globalCompositeOperation = "lighter";
+
+  const points: { x: number; y: number; band: number }[][] = [];
+  for (let row = 0; row <= rows; row += 1) {
+    const line: { x: number; y: number; band: number }[] = [];
+    for (let col = 0; col <= cols; col += 1) {
+      const bandIndex = (col + row) % bands.length;
+      const band = bands[bandIndex] ?? 0;
+      const baseX = col * cellWidth;
+      const baseY = row * cellHeight;
+      const waveX =
+        Math.sin(row * 0.6 + time * 1.4 + col * 0.18) *
+        cellWidth *
+        0.4 *
+        (0.3 + band * intensity);
+      const waveY =
+        Math.cos(col * 0.55 + time * 1.6 + row * 0.22) *
+        cellHeight *
+        0.45 *
+        (0.3 + band * intensity);
+      line.push({ x: baseX + waveX, y: baseY + waveY, band });
+    }
+    points.push(line);
+  }
+
+  for (let row = 0; row <= rows; row += 1) {
+    context.beginPath();
+    for (let col = 0; col <= cols; col += 1) {
+      const point = points[row][col];
+      if (col === 0) {
+        context.moveTo(point.x, point.y);
+      } else {
+        context.lineTo(point.x, point.y);
+      }
+    }
+    const hue = (hueBase + row * 16 + time * 18) % 360;
+    context.strokeStyle = `hsla(${hue}, 92%, ${58 + bass * 12}%, ${0.2 + mid * 0.3})`;
+    context.lineWidth = Math.max(1, width * 0.0018);
+    strokePath(context);
+  }
+
+  for (let col = 0; col <= cols; col += 1) {
+    context.beginPath();
+    for (let row = 0; row <= rows; row += 1) {
+      const point = points[row][col];
+      if (row === 0) {
+        context.moveTo(point.x, point.y);
+      } else {
+        context.lineTo(point.x, point.y);
+      }
+    }
+    const hue = (hueBase + 90 + col * 11 - time * 16) % 360;
+    context.strokeStyle = `hsla(${hue}, 92%, ${62 + treble * 12}%, ${0.18 + mid * 0.28})`;
+    context.lineWidth = Math.max(1, width * 0.0018);
+    strokePath(context);
+  }
+
+  for (let row = 0; row <= rows; row += 1) {
+    for (let col = 0; col <= cols; col += 1) {
+      const point = points[row][col];
+      const energy = point.band;
+      if (energy < 0.18) {
+        continue;
+      }
+      const hue = (hueBase + (col + row) * 14 + time * 30) % 360;
+      context.fillStyle = `hsla(${hue}, 100%, 82%, ${Math.min(0.9, 0.2 + energy * 0.7)})`;
+      context.beginPath();
+      arcPath(
+        context,
+        point.x,
+        point.y,
+        Math.max(1.4, width * 0.003 + energy * width * 0.004),
+      );
+      fillPath(context);
+    }
+  }
+
+  restoreContext(context);
+}
+
+function drawAuroraBands(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  bands: number[],
+  hueBase: number,
+  intensity: number,
+  time: number,
+) {
+  const bass = average(bands, 0, 4);
+  const mid = average(bands, 4, 11);
+  const treble = average(bands, 11, bands.length);
+  const ribbons = 6;
+
+  saveContext(context);
+  context.globalCompositeOperation = "lighter";
+
+  for (let ribbon = 0; ribbon < ribbons; ribbon += 1) {
+    const ribbonT = ribbon / (ribbons - 1);
+    const baselineY = height * (0.32 + ribbonT * 0.42);
+    const amplitude =
+      height * (0.06 + bass * 0.12 * intensity + ribbonT * 0.03);
+    const segments = 64;
+
+    context.beginPath();
+    for (let segment = 0; segment <= segments; segment += 1) {
+      const x = (segment / segments) * width;
+      const phase = segment / segments;
+      const bandIndex = Math.floor(phase * bands.length);
+      const band = bands[bandIndex] ?? 0;
+      const wave =
+        Math.sin(phase * 6.28 + time * (0.5 + ribbonT * 0.6) + ribbon * 0.7) *
+          amplitude +
+        Math.sin(phase * 18.84 - time * 1.3 + ribbon) *
+          amplitude *
+          0.25 *
+          (0.5 + band);
+      const y = baselineY + wave - band * height * 0.04 * intensity;
+      if (segment === 0) {
+        context.moveTo(x, y);
+      } else {
+        context.lineTo(x, y);
+      }
+    }
+    context.lineTo(width, height);
+    context.lineTo(0, height);
+    context.closePath();
+
+    const hue = (hueBase + ribbon * 28 + time * 20) % 360;
+    const gradient = context.createLinearGradient(
+      0,
+      baselineY - amplitude,
+      0,
+      height,
+    );
+    gradient.addColorStop(
+      0,
+      `hsla(${hue}, 96%, ${68 - ribbon * 4}%, ${0.32 + treble * 0.26 - ribbon * 0.04})`,
+    );
+    gradient.addColorStop(
+      0.5,
+      `hsla(${(hue + 40) % 360}, 92%, ${52 + mid * 12}%, ${0.18 + bass * 0.18})`,
+    );
+    gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+    context.fillStyle = gradient;
+    fillPath(context);
+
+    context.beginPath();
+    for (let segment = 0; segment <= segments; segment += 1) {
+      const x = (segment / segments) * width;
+      const phase = segment / segments;
+      const bandIndex = Math.floor(phase * bands.length);
+      const band = bands[bandIndex] ?? 0;
+      const wave =
+        Math.sin(phase * 6.28 + time * (0.5 + ribbonT * 0.6) + ribbon * 0.7) *
+          amplitude +
+        Math.sin(phase * 18.84 - time * 1.3 + ribbon) *
+          amplitude *
+          0.25 *
+          (0.5 + band);
+      const y = baselineY + wave - band * height * 0.04 * intensity;
+      if (segment === 0) {
+        context.moveTo(x, y);
+      } else {
+        context.lineTo(x, y);
+      }
+    }
+    context.strokeStyle = `hsla(${(hue + 20) % 360}, 100%, ${82 - ribbon * 4}%, ${0.5 + treble * 0.3})`;
+    context.lineWidth = Math.max(1.2, width * 0.0024);
+    strokePath(context);
+  }
+
+  restoreContext(context);
+}
+
 function drawWaveCrest(
   context: CanvasRenderingContext2D,
   width: number,
@@ -409,6 +759,17 @@ function roundRectFill(
     maybeContext.rect?.(x, y, width, height);
   }
   fillPath(context);
+}
+
+function arcPath(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+) {
+  if ("arc" in context && typeof context.arc === "function") {
+    context.arc(x, y, Math.max(0.5, radius), 0, Math.PI * 2);
+  }
 }
 
 function saveContext(context: CanvasRenderingContext2D) {
